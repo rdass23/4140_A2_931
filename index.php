@@ -17,7 +17,7 @@
 	ini_set('display_startup_errors', 1);
 	error_reporting(E_ALL); 
 
-	$conn = mysqli_connect("db.cs.dal.ca", "rdass", "PPeGT5XKw8w4u6cnyc4ECehQP", 'rdass');
+	$conn = mysqli_connect("localhost", "mamp", "", 'rdass');
 
 	?>
 	<header><a href="index.php" class="text-decoration-none text-white">Assingment 2</a></header>
@@ -33,18 +33,17 @@
 			<div id="collapseTwo" class="accordion-collapse collapse" aria-labelledby="headingTwo" data-bs-parent="#accordionExample">
 				<div class="accordion-body">
 					<table>
-						<tr>
-							<th>Part Number</th>
-							<th>Part Name</th>
-							<th>Current Price</th>
-						</tr>
 						<?php 
 						$parts = "SELECT * FROM Parts931";
 						$result = $conn -> query($parts);
 
 						if ($result-> num_rows > 0) {
 							while ($row = $result-> fetch_assoc()){
-								echo "<tr><td>".$row["partNo931"]."</td><td>".$row["partName931"]."</td><td>$".$row["currentPrice931"]."</td></tr>";
+								echo "<tr>
+							<th>Part Number</th>
+							<th>Part Name</th>
+							<th>Current Price</th>
+						</tr><tr><td>".$row["partNo931"]."</td><td>".$row["partName931"]."</td><td>$".$row["currentPrice931"]."</td></tr>";
 							}
 						}
 						else {
@@ -76,16 +75,18 @@
 
 						// check if client id exists in database
 						$sqlCheck = $conn -> query("SELECT * FROM Clients931 WHERE clientId931 = $clientId");
+						// when client exists, create purchase order
 						if($sqlCheck !== false && $sqlCheck -> num_rows > 0)
 						{
-							if (mysqli_query($conn, "INSERT INTO POs931 (clientCompID931, status931) VALUES('$clientId', 'in progress')")) {
-
+							$date = date("Y-m-d");
+							if ($conn -> query("INSERT INTO POs931 (clientCompID931, dateOfPO931, status931) VALUES('$clientId', '$date', 'in progress')") === TRUE) {
 								$poId = $conn -> insert_id;
 								echo "<script>alert('Purchase order successfully created! Your PO number is ".$poId."');</script>";
 							} else {
-								echo "Error";
+								echo "Error creating purchase order.";
 							}
 						}
+						// when client does not exist give alert
 						else
 						{
 							echo "<script>alert('Client ID does not exist, cannot create purchase order');</script>";
@@ -105,13 +106,68 @@
 					</form>
 					<?php
 					if (isset($_POST['submitLine931'])){
-							$poNumLine = $_POST['poNum931']; // get po num input text
-							$partNum = $_POST['partNo931']; // get part num input text
-							$qty = $_POST['qty931']; // get qty input text
-							$price = $_POST['currPrice931']; // get price input text
+						$poNumLine = $_POST['poNum931']; // get po num input text
+						$partNum = $_POST['partNo931']; // get part num input text
+						$qty = $_POST['qty931']; // get qty input text
+						$price = $_POST['currPrice931']; // get price input text
 
-						} 
-						?>
+						// create a variable to keep track of errors
+						$errors = 0;
+
+						// check if PO Num exists
+						$poNumCheck = $conn -> query("SELECT * FROM POs931 WHERE poNo931 = $poNumLine");
+						// when PO Num doesnt exist, add 1 to errors
+						if($poNumCheck !== true && $poNumCheck -> num_rows <= 0){
+							$errors = $errors + 1;
+							echo "PO Number ".$poNumLine." does not exist.<br/>";
+
+						}
+
+						// check if part number exists
+						$partNumCheck = $conn -> query("SELECT * FROM Parts931 WHERE partNo931 = $partNum");
+						// when PO Num doesnt exist, add 1 to errors
+						if($partNumCheck !== true && $partNumCheck -> num_rows <= 0){
+							$errors = $errors + 1;
+							echo "Part Number ".$partNum." does not exist.<br/>";
+						} else{
+							// only check for quanity if part number exists
+							$quantityCheck = $conn -> query("SELECT qoh931 FROM Parts931 WHERE partNo931 = $partNum");
+							if ($quantityCheck->num_rows > 0) {
+							  while($row = $quantityCheck->fetch_assoc()) {
+							    if ($row["qoh931"] < $qty){
+							    	$errors = $errors + 1;
+							    	echo "Not enough quanity available. Part ".$partNum." only has ".$row["qoh931"]." left.<br/>";
+							    }
+							  }
+							}
+
+							// only check for price if part number exists
+							$priceCheck = $conn -> query("SELECT currentPrice931 FROM Parts931 WHERE partNo931 = $partNum");
+							if ($priceCheck->num_rows > 0) {
+							  while($row = $priceCheck->fetch_assoc()) {
+							    if ($row["currentPrice931"] !== $price){
+							    	$errors = $errors + 1;
+							    	echo "The current price of part ".$partNum." and entered price do not match.";
+							    }
+							  }
+							}
+						}
+
+						// If all checks have passed (so errors still equals 0) submit form data to db
+						if ($errors === 0){
+							// find number of lines in PO
+	  						$lineCheck = $conn -> query("SELECT * FROM Lines931 WHERE poNo931 = $poNumLine");
+	  						$lineNum = $lineCheck->num_rows + 1;
+	  						
+							if ($conn -> query("INSERT INTO Lines931 (poNo931, lineNo931, partNo931, qty931, priceOrdered931) VALUES('$poNumLine', '$lineNum', '$partNum', '$qty', '$price')") === TRUE) {
+								echo "<script>alert('Line successfully added to your PO!');</script>";
+								
+							} else {
+								echo "Error adding line to purchase order. ".$conn->error;
+							}
+						}
+					} 
+					?>
 					</div>
 				</div>
 			</div>
@@ -121,7 +177,7 @@
 			<!-- SEARCH BY PO NUMBER -->
 			<div class="m-4 container">
 				<hr> 
-				<h3>Search for Lines in a PO Order</h3>
+				<h3>Search for Lines in a Purchase Order</h3>
 				<p>Enter a PO number and a list of lines in that PO will be returned.</p>
 				<form class="col-2" name="searchPoForm" action="" method="post">
 					<input type="text" class="form-control" name="searchPo931" placeholder="PO Number" required>
@@ -150,12 +206,12 @@
 	  					}
 	  				}
 	  				else {
-  					// check if PO num exists in PO table
+  						// check if PO num exists in PO table
 	  					$poCheck = $conn -> query("SELECT * FROM POs931 WHERE poNo931 = $poNum");
 	  					if ($poCheck !== false && $poCheck -> num_rows > 0) {
 	  						echo "No lines found in PO ".$poNum;
 	  					}
-  					// if PO doesn't exist at all tell user
+  						// if PO doesn't exist at all tell user
 	  					else{
 	  						echo "PO ".$poNum." does not exist!";
 	  					}
@@ -167,6 +223,52 @@
 	  		<!-- END OF SEARCH BY PO NUMBER -->
 
 	  		<!-- SEARCH BY CLIENT ID -->
+			<div class="m-4 container">
+				<hr> 
+				<h3>Search for Purchase Orders by Client ID</h3>
+				<p>Enter a Client ID and a list of purchase orders made by the client will be returned.</p>
+				<form class="col-2" name="searchClientForm" action="" method="post">
+					<input type="text" class="form-control" name="searchClient931" placeholder="Client ID" required>
+					<button type="submit" class="btn btn-primary my-3" name="submitClientSearch931">Search</button>
+				</form>
+
+				<?php 
+			if(isset($_POST['submitClientSearch931'])){ //check if form was submitted
+
+	  			$client = $_POST['searchClient931']; //get input text
+	  			$lineResult = $conn -> query("SELECT * FROM POs931 WHERE clientCompID931 = $client");
+	  			// when lines for a PO num exist
+	  			if ($lineResult !== false && $lineResult-> num_rows > 0) {
+	  				?>
+	  				<table>
+	  					<tr>
+	  						<th>PO Number</th>
+	  						<th>Client ID</th>
+	  						<th>Date Ordered</th>
+	  						<th>Status</th>
+	  					</tr>
+	  					<?php
+	  					while ($row = $lineResult-> fetch_assoc()){
+	  						echo "<tr><td>".$row["poNo931"]."</td><td>".$row["clientCompID931"]."</td><td>".$row["dateOfPO931"]."</td><td>".$row["status931"]."</td></tr>";
+	  					}
+	  				}
+	  				else {
+  					// check if Client ID exists in Clients table
+	  					$clientCheck = $conn -> query("SELECT * FROM Clients931 WHERE clientId931 = $client");
+	  					if ($clientCheck !== false && $clientCheck -> num_rows > 0) {
+	  						echo "No purchase orders made by client with client ID ".$client;
+	  					}
+  					// if client doesn't exist at all tell user
+	  					else{
+	  						echo "Client ID ".$client." does not exist!";
+	  					}
+	  				}
+	  				?></table> <?php
+	  			} 
+	  			?>
+	  		</div>
+	  		<!-- END OF SEARCH BY CLIENT ID -->
+
 
 	  		<?php $conn->close(); ?>
 
